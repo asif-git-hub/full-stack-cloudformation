@@ -1,0 +1,397 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Creates backend resources for DVIX like EC2s, ECS, Database and SES"
+
+Parameters:
+  env:
+    Description: Environment for the frontend like dev, staging or prod
+    Type: String
+    Default: "dev"
+  dbPassword:
+    Description: Database master user password
+    Type: String
+    Default: "Test123456"
+
+
+Mappings:
+  DatabaseConfigMap:
+    dev:
+      dbAllocatedStorageGB: 20
+      dbInstanceClass: db.m5.large
+      dbMultiAZ: 'false'
+    test:
+      dbAllocatedStorageGB: 20
+      dbInstanceClass: db.m5.large
+      dbMultiAZ: 'false'
+  Ec2InstanceConfigMap:
+    dev:
+      ibmEc2InstanceType: 't2.micro'
+      goanywhereEc2InstanceType: 't2.micro'
+      amiId: 'ami-02396cdd13e9a1257'
+    test:
+      ibmEc2InstanceType: 't2.micro'
+      goanywhereEc2InstanceType: 't2.micro'
+      amiId: 'ami-02396cdd13e9a1257'
+  ECSConfigMap:
+    dev:
+      containerCpu: 256
+      containerMemory: 512
+      dockerImageUrl: nginx
+      desiredCount: 2
+    test:
+      containerCpu: 256
+      containerMemory: 512
+      dockerImageUrl: nginx
+      desiredCount: 2
+  GlueConfigMap:
+    dev:
+      scriptLocation: "/python/execute.py"  # Change this to your script location
+    test:
+      scriptLocation: "/python/execute.py"  # Change this to your script location
+
+
+Resources:
+
+  # Security Group #############################################
+
+  ApplicationSecruityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Dvix Application Security Group
+      GroupName: !Sub "${env}-dvix-application-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-application-sg'
+  
+  ProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Go Anywhere Security Group
+      GroupName: !Sub "${env}-dvix-go-anywhere-proxy-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub "${env}-dvix-go-anywhere-proxy-sg"
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties: 
+      GroupDescription: RDS Oracle Database Security Group
+      GroupName: !Sub "${env}-dvix-db-sg"
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref ApplicationSecruityGroup
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-databaseb-sg'
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties: 
+      DBSubnetGroupDescription: Oracle RDS DB Subnet
+      DBSubnetGroupName: !Sub "${env}-dvix-db-subnet-group"
+      SubnetIds: 
+        - '{{resolve:ssm:/common-resources/subnet/private0}}'
+        - '{{resolve:ssm:/common-resources/subnet/private1}}'
+  
+  # Database #############################################
+
+  OracleRDSDatabase:
+    Type: AWS::RDS::DBInstance
+    DependsOn:
+      - DBSecurityGroup
+    Properties:
+      DBInstanceIdentifier: !Sub "${env}-dvix-db-cluster"
+      DBName: ORCL
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      LicenseModel: license-included
+      AllocatedStorage: !FindInMap [ DatabaseConfigMap, !Ref env, dbAllocatedStorageGB ]
+      DBInstanceClass: !FindInMap [ DatabaseConfigMap, !Ref env, dbInstanceClass ]
+      Engine: oracle-se2 # Oracle Standard Edition
+      MasterUsername: master
+      MasterUserPassword: !Ref dbPassword
+      MultiAZ: !FindInMap [ DatabaseConfigMap, !Ref env, dbMultiAZ ]
+      VPCSecurityGroups: 
+        - !Ref DBSecurityGroup
+
+  # EC2 Instances #############################################
+
+  IBMAppEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties:
+      InstanceType: !FindInMap [ Ec2InstanceConfigMap, !Ref env, ibmEc2InstanceType ]
+      SecurityGroupIds:
+        - !Ref 'ApplicationSecruityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private0}}'
+      ImageId: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+      KeyName: dvix-app-key # This is created manually in AWS console
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-ibm-app-ec2instance'
+
+  IBMCOMAppEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties:
+      InstanceType: !FindInMap [ Ec2InstanceConfigMap, !Ref env, ibmEc2InstanceType ]
+      SecurityGroupIds:
+        - !Ref 'ApplicationSecruityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private0}}'
+      ImageId: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+      KeyName: dvix-app-key # This is created manually in AWS console
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-ibmcom-app-ec2instance'
+
+  GoAnyWhereEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties:
+      InstanceType: !FindInMap [ Ec2InstanceConfigMap, !Ref env, goanywhereEc2InstanceType ]
+      SecurityGroupIds:
+        - !Ref 'ApplicationSecruityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private0}}'
+      ImageId: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+      KeyName: dvix-app-key # This is created manually in AWS console
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-go-anywhere-private-ec2instance'
+
+  GoAnyWhereProxyEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ProxySecurityGroup
+    Properties:
+      InstanceType: !FindInMap [ Ec2InstanceConfigMap, !Ref env, goanywhereEc2InstanceType ]
+      SecurityGroupIds:
+        - !Ref 'ProxySecurityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/public0}}'
+      ImageId: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+      KeyName: dvix-app-key # This is created manually in AWS console
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-go-anywhere-proxy-ec2instance'
+
+  # S3 #############################################
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${env}-${AWS::Region}-dvix-bucket"
+
+  
+  # ECS #############################################
+
+  ECSContainerSecruityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Dvix ECS Container Security Group
+      GroupName: !Sub "${env}-dvix-ecs-container-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-ecs-container-sg'
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${env}-dvix-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: my-task-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              Resource: arn:aws:logs:*:*:log-group:/ecs/my-task:*
+
+  TaskExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub ${env}-dvix-ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        - PolicyName: my-execution-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - ecs:CreateCluster
+              - ecs:DeregisterTaskDefinition
+              - ecs:DescribeClusters
+              - ecs:DescribeTaskDefinition
+              - ecs:ListClusters
+              - ecs:ListTaskDefinitions
+              - ecs:RegisterTaskDefinition
+              Resource: "*"
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${env}-dvix-service-cluster
+
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${env}-dvix-ecs-task
+      Cpu: !FindInMap [ ECSConfigMap, !Ref env, containerCpu ]
+      Memory: !FindInMap [ ECSConfigMap, !Ref env, containerMemory ]
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: !Sub ${env}-dvix-ecs-task-container
+          Cpu: !FindInMap [ ECSConfigMap, !Ref env, containerCpu ]
+          Memory: !FindInMap [ ECSConfigMap, !Ref env, containerMemory ]
+          Image: !FindInMap [ ECSConfigMap, !Ref env, dockerImageUrl ]
+          PortMappings:
+            - ContainerPort: 80
+
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${env}-dvix-service
+      Cluster: !Ref ECSCluster
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 25
+      DesiredCount: !FindInMap [ ECSConfigMap, !Ref env, desiredCount ]
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref ECSContainerSecruityGroup
+          Subnets:
+            - '{{resolve:ssm:/common-resources/subnet/private0}}'
+            - '{{resolve:ssm:/common-resources/subnet/private1}}'
+      TaskDefinition: !Ref ECSTaskDefinition
+
+
+  # EFS #############################################
+
+  EFSMountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS Mount Target Security Group
+      GroupName: !Sub '${env}-dvix-efs-mount-sg'
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-efs-mount-target-sg'
+
+  EFSFileSystem:
+    Type: AWS::EFS::FileSystem
+    DependsOn: EFSMountTargetSecurityGroup
+    Properties:
+      PerformanceMode: generalPurpose
+      Encrypted: true
+      BackupPolicy:
+        Status: ENABLED
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_60_DAYS   # This can be configured
+      FileSystemPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowReadWriteAccess
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Action:
+              - elasticfilesystem:ClientMount
+              - elasticfilesystem:ClientWrite
+              - elasticfilesystem:ClientRead
+            Resource: "*"
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${env}-dvix-efs
+        - Key: Environment
+          Value: !Sub ${env}
+
+  EFSMountTarget:
+    Type: AWS::EFS::MountTarget
+    DependsOn: EFSFileSystem
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private0}}'
+      SecurityGroups: 
+        - !Ref EFSMountTargetSecurityGroup
+
+  # Glue #############################################
+
+  GlueJobRole: 
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub "${env}-dvix-glue-job-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: !GetAtt S3Bucket.Arn
+
+  GlueJob:
+    Type: AWS::Glue::Job
+    DependsOn: GlueJobRole
+    Properties: 
+      Name: !Sub ${env}-dvix-glue-job
+      Description: "Dvix Glue Job"
+      MaxRetries: 3
+      Role: !Ref GlueJobRole
+      Command:
+        Name: pythonshell   # I have assumed it will run a python job
+        PythonVersion: 3.9
+        ScriptLocation: !FindInMap [ GlueConfigMap, !Ref env, scriptLocation ]
+
+
+
