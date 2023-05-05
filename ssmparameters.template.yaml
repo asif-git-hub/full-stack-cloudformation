@@ -1,0 +1,152 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Creates backend resources for DVIX like EC2s, ECS, Database and SES"
+
+Parameters:
+  env:
+    Description: Environment for the frontend like dev, stg or prod
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+
+Mappings:
+  Ec2InstanceConfigMap:
+    dev:
+      ibmEc2InstanceType: 't2.micro'
+      ibmcomEc2InstanceType: 't2.micro'
+      goanywhereEc2InstanceType: 't2.micro'
+      amiId: 'ami-02396cdd13e9a1257'
+      keyname: 'dvix-app-key'
+    stg:
+      ibmEc2InstanceType: 't2.micro'
+      ibmcomEc2InstanceType: 't2.micro'
+      goanywhereEc2InstanceType: 't2.micro'
+      amiId: 'ami-02396cdd13e9a1257'
+      keyname: 'dvix-app-key'
+    prod:
+      ibmEc2InstanceType: 't2.micro'
+      ibmcomEc2InstanceType: 't2.micro'
+      goanywhereEc2InstanceType: 't2.micro'
+      amiId: 'ami-02396cdd13e9a1257'
+      keyname: 'dvix-app-key'
+
+Resources:
+
+  # Instance Type ############################################
+
+  IbmEc2InstanceTypeParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} IBM EC2 Instance type'
+      Name: !Sub '/${env}/dvix/ec2-instance/ibm/type'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, ibmEc2InstanceType ]
+
+  IbmCOMEc2InstanceTypeParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} IBM COM EC2 Instance type'
+      Name: !Sub '/${env}/dvix/ec2-instance/ibm-com/type'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, ibmEc2InstanceType ]
+
+  GoAnywhereEc2InstanceTypeParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} Go Anywhere EC2 Instance type'
+      Name: !Sub '/${env}/dvix/ec2-instance/go-anywhere/type'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, goanywhereEc2InstanceType ]
+
+  GoAnywhereProxyEc2InstanceTypeParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} Go Anywhere Proxy EC2 Instance type'
+      Name: !Sub '/${env}/dvix/ec2-instance/go-anywhere-proxy/type'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, goanywhereEc2InstanceType ]
+
+  # Image ID ############################################
+
+  IbmEc2AMIParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} IBM EC2 Instance AMI'
+      Name: !Sub '/${env}/dvix/ec2-instance/ibm/amiId'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+
+  IbmCOMEc2AMIParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} IBM COM EC2 Instance AMI'
+      Name: !Sub '/${env}/dvix/ec2-instance/ibm-com/amiId'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+
+  GoAnywhereEC2AMIParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} Go Anywhere EC2 Instance AMI'
+      Name: !Sub '/${env}/dvix/ec2-instance/go-anywhere/amiId'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+
+  GoAnywhereProxyEC2AMIParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} Go Anywhere Proxy EC2 Instance AMI'
+      Name: !Sub '/${env}/dvix/ec2-instance/go-anywhere-proxy/ami'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, amiId ]
+
+
+  # Key Name ############################################
+
+  IbmEc2KeyNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} IBM EC2 Key Name'
+      Name: !Sub '/${env}/dvix/ec2-instance/ibm/keyname'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, keyname ]
+
+  IbmCOMEc2KeyNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} IBM COM EC2 Key Name'
+      Name: !Sub '/${env}/dvix/ec2-instance/ibm-com/keyname'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, keyname ]
+
+  GoAnywhereEC2KeyNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} Go Anywhere EC2 Key Name'
+      Name: !Sub '/${env}/dvix/ec2-instance/go-anywhere/keyname'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, keyname ]
+
+  GoAnywhereProxyEC2KeyNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub '${env} Go Anywhere Proxy EC2 Key Name'
+      Name: !Sub '/${env}/dvix/ec2-instance/go-anywhere-proxy/keyname'
+      Type: String
+      Value: !FindInMap [ Ec2InstanceConfigMap, !Ref env, keyname ]
+

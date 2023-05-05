@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Creates backend resources for DVIX like EC2s, ECS, Database and SES"
+
+Parameters:
+  env:
+    Description: Environment for the frontend like dev, stg or prod
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+
+Conditions:
+  isProd: !Equals [!Ref env, 'prod']
+  isStaging: !Equals [!Ref env, 'stg']
+  isStagingOrProd: !Or 
+    - !Condition isProd
+    - !Condition isStaging
+
+Resources:
+
+  # Security Group #############################################
+
+  ApplicationSecruityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Dvix Application Security Group
+      GroupName: !Sub "${env}-dvix-application-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-application-sg'
+        - Key: Environment
+          Value: !Ref env
+
+  ProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Go Anywhere Security Group
+      GroupName: !Sub "${env}-dvix-go-anywhere-proxy-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub "${env}-dvix-go-anywhere-proxy-sg"
+        - Key: Environment
+          Value: !Ref env
+
+  # EC2 Instances #############################################
+
+  IBMAppEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties:
+      InstanceType: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/ibm/type}}'
+      SecurityGroupIds:
+        - !Ref 'ApplicationSecruityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private0}}'
+      ImageId: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/ibm/amiId}}'
+      KeyName: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/ibm/keyname}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-ibm-app-ec2instance'
+        - Key: Environment
+          Value: !Ref env
+
+  IBMCOMAppEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties:
+      InstanceType: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/ibm-com/type}}'
+      SecurityGroupIds:
+        - !Ref 'ApplicationSecruityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private0}}'
+      ImageId: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/ibm-com/amiId}}'
+      KeyName: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/ibm-com/keyname}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-ibmcom-app-ec2instance'
+        - Key: Environment
+          Value: !Ref env
+
+  GoAnyWhereEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties:
+      InstanceType: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/type}}'
+      SecurityGroupIds:
+        - !Ref 'ApplicationSecruityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private0}}'
+      ImageId: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/amiId}}'
+      KeyName: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/keyname}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-go-anywhere-private-ec2instance'
+        - Key: Environment
+          Value: !Ref env
+
+  GoAnyWhereProxyEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ProxySecurityGroup
+    Properties:
+      InstanceType: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere-proxy/type}}'
+      SecurityGroupIds:
+        - !Ref 'ProxySecurityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/public0}}'
+      ImageId: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/amiId}}'
+      KeyName: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/keyname}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-go-anywhere-proxy-ec2instance'
+        - Key: Environment
+          Value: !Ref env
+
+
+  # Higher environment: Staging and Prod EC2 Instances ###################
+
+  GoAnyWhereSecondaryEc2Instance:
+    Condition: isStagingOrProd
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ApplicationSecruityGroup
+    Properties:
+      InstanceType: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/type}}'
+      SecurityGroupIds:
+        - !Ref 'ApplicationSecruityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/private1}}'
+      ImageId: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/amiId}}'
+      KeyName: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/keyname}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-go-anywhere-private-secondary-ec2instance'
+        - Key: Environment
+          Value: !Ref env
+
+  GoAnyWhereProxySecondaryEc2Instance:
+    Condition: isStagingOrProd
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - ProxySecurityGroup
+    Properties:
+      InstanceType: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere-proxy/type}}'
+      SecurityGroupIds:
+        - !Ref 'ProxySecurityGroup'
+      SubnetId: '{{resolve:ssm:/common-resources/subnet/public1}}'
+      ImageId: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/amiId}}'
+      KeyName: !Sub '{{resolve:ssm:/${env}/dvix/ec2-instance/go-anywhere/keyname}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-go-anywhere-proxy-secondary-ec2instance'
+        - Key: Environment
+          Value: !Ref env
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+  

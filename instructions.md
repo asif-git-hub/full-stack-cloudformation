@@ -27,3 +27,21 @@ All resources are region based. If you want to deploy to another region. The com
 * aws cloudformation deploy --profile fiverr --region us-east-1 --template backend.template.yaml --stack-name dev-backend-resources-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides env=dev
 
 * aws cloudformation deploy --profile fiverr --region us-east-1 --template backend.template.yaml --stack-name test-backend-resources-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides env=test dbPassword=AbraCadabra123
+
+## Splitting Templates into resource stacks
+
+4. Deploy ssm parameter template
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template ssmparameters.template.yaml --stack-name dev-ssm-parameter-stack --parameter-overrides env=dev
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template ssmparameters.template.yaml --stack-name stg-ssm-parameter-stack --parameter-overrides env=stg
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template ssmparameters.template.yaml --stack-name prod-ssm-parameter-stack --parameter-overrides env=prod
+
+4. Deploy ec2 template
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template ec2.template.yaml --stack-name dev-dvix-ec2-resources-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides env=dev
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template ec2.template.yaml --stack-name stg-dvix-ec2-resources-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides env=stg
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template ec2.template.yaml --stack-name prod-dvix-ec2-resources-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides env=prod
