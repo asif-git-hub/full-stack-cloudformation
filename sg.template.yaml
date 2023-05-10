@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Creates Security Groups"
+
+Parameters:
+  env:
+    Description: Environment for the frontend like dev, staging or prod
+    Type: String
+    Default: "dev"
+
+Resources:
+
+  # Security Group #############################################
+  
+  ApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Dvix Application Security Group
+      GroupName: !Sub "${env}-dvix-application-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-application-sg'
+
+  GoAnywherePrivateSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Dvix Application Security Group
+      GroupName: !Sub '${env}-dvix-go-anywhere-private-sg'
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-go-anywhere-private-sg'
+  
+  GoAnywhereProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Go Anywhere Security Group
+      GroupName: !Sub "${env}-dvix-go-anywhere-proxy-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub "${env}-dvix-go-anywhere-proxy-sg"
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn:
+      - ApplicationSecurityGroup
+    Properties: 
+      GroupDescription: RDS Oracle Database Security Group
+      GroupName: !Sub "${env}-dvix-db-sg"
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref ApplicationSecurityGroup
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-databaseb-sg'
+
+  EFSMountTargetSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EFS Mount Target Security Group
+      GroupName: !Sub '${env}-dvix-efs-mount-sg'
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-efs-mount-target-sg'
+
+  ECSContainerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Dvix ECS Container Security Group
+      GroupName: !Sub "${env}-dvix-ecs-container-sg"
+      VpcId: '{{resolve:ssm:/common-resources/vpcid}}'
+      Tags:
+        - Key: Name
+          Value: !Sub '${env}-dvix-ecs-container-sg'
+
+  # SSM Parameters ######################################################
+
+  ApplicationSecurityGroupIdParameter:
+    DependsOn: ApplicationSecurityGroup
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env} application sg"
+      Name: !Sub '/${env}/dvix/application/sg/id'
+      Type: String
+      Value: !Ref ApplicationSecurityGroup
+  
+  GoAnywherePrivateSecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env} goanywhere sg"
+      Name: !Sub '/${env}/dvix/goanywhere/sg/id'
+      Type: String
+      Value: !Ref GoAnywherePrivateSecurityGroup
+
+  GoAnywhereProxySecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env} goanywhere proxy sg"
+      Name: !Sub '/${env}/dvix/goanywhere-proxy/sg/id'
+      Type: String
+      Value: !Ref GoAnywhereProxySecurityGroup
+
+  DBSecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env} database sg"
+      Name: !Sub '/${env}/dvix/database/sg/id'
+      Type: String
+      Value: !Ref DBSecurityGroup
+
+  EFSMountTargetSecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env} efs mount target sg"
+      Name: !Sub '/${env}/dvix/efs/mount-target/sg/id'
+      Type: String
+      Value: !Ref EFSMountTargetSecurityGroup
+
+  ECSContainerSecurityGroupIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env} ecs sg"
+      Name: !Sub '/${env}/dvix/ecs/container/sg/id'
+      Type: String
+      Value: !Ref ECSContainerSecurityGroup
+
+Outputs:
+
+  ApplicationSecurityGroupId:
+    Description: "Application Security Group"
+    Value: !Ref ApplicationSecurityGroup
+    Export:
+      Name: !Sub "${env}-ApplicationSecurityGroup"
+
+  GoAnywherePrivateSecurityGroupId:
+    Description: "GoAnywhere Security Group"
+    Value: !Ref GoAnywherePrivateSecurityGroup
+    Export:
+      Name: !Sub "${env}-GoAnywherePrivateSecurityGroup"
+
+  GoAnywhereProxySecurityGroupId:
+    Description: "GoAnywhereProxy Security Group"
+    Value: !Ref GoAnywhereProxySecurityGroup
+    Export:
+      Name: !Sub "${env}-GoAnywhereProxySecurityGroup"
+
+  DBSecurityGroupId:
+    Description: "Database Security Group"
+    Value: !Ref DBSecurityGroup
+    Export:
+      Name: !Sub "${env}-DBSecurityGroup"
+
+  EFSMountTargetSecurityGroupId:
+    Description: "EFSMountTarget Security Group"
+    Value: !Ref EFSMountTargetSecurityGroup
+    Export:
+      Name: !Sub "${env}-EFSMountTargetSecurityGroup"
+
+  ECSContainerSecurityGroupId:
+    Description: "ECSContainer Security Group"
+    Value: !Ref ECSContainerSecurityGroup
+    Export:
+      Name: !Sub "${env}-ECSContainerSecurityGroup"

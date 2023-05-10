@@ -45,3 +45,20 @@ All resources are region based. If you want to deploy to another region. The com
 * aws cloudformation deploy --profile fiverr --region us-east-1 --template ec2.template.yaml --stack-name stg-dvix-ec2-resources-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides env=stg
 
 * aws cloudformation deploy --profile fiverr --region us-east-1 --template ec2.template.yaml --stack-name prod-dvix-ec2-resources-stack --capabilities CAPABILITY_NAMED_IAM --parameter-overrides env=prod
+
+5. Deploy s3 template
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template s3.template.yaml --stack-name dev-dvix-s3-bucket-stack --parameter-overrides env=dev
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template s3.template.yaml --stack-name stg-dvix-s3-bucket-stack --parameter-overrides env=stg
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template s3.template.yaml --stack-name dprodev-dvix-s3-bucket-stack --parameter-overrides env=prod
+
+
+5. Deploy sg template
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template sg.template.yaml --stack-name dev-dvix-security-group-stack --parameter-overrides env=dev
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template sg.template.yaml --stack-name stg-dvix-security-group-stack --parameter-overrides env=stg
+
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template sg.template.yaml --stack-name prod-dvix-security-group-stack --parameter-overrides env=prod

@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Creates S3 buckets"
+
+Parameters:
+  env:
+    Description: Environment for the frontend like dev, staging or prod
+    Type: String
+    Default: "dev"
+
+Resources:
+
+  # S3 Buckets ######################################################
+
+  S3FrontendContentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${env}-${AWS::Region}-dvix-static-webapp"
+
+  S3BackendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${env}-${AWS::Region}-dvix-bucket"
+
+  # SSM Parameter for ARN ################################################
+
+  S3BackendBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env}-${AWS::Region}-dvix-bucket arn"
+      Name: !Sub '/${env}/dvix/s3/backend-bucket/arn'
+      Type: String
+      Value: !GetAtt S3BackendBucket.Arn
+
+  S3FrontendContentBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      DataType: text
+      Description: !Sub "${env}-${AWS::Region}-dvix-static-webapp bucket arn"
+      Name: !Sub '/${env}/dvix/s3/frontend-bucket/arn'
+      Type: String
+      Value: !GetAtt S3FrontendContentBucket.Arn
+
+
+Outputs:
+
+  S3FrontendContentBucketArn:
+    Description: "Arn of S3FrontendContentBucket"
+    Value: !GetAtt S3FrontendContentBucket.Arn
+    Export:
+      Name: !Sub "${env}-S3FrontendContentBucketArn"
+
+  S3BackendBucketArn:
+    Description: "Arn of S3BackendBucket"
+    Value: !GetAtt S3BackendBucket.Arn
+    Export:
+      Name: !Sub "${env}-S3BackendBucketArn"
