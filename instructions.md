@@ -52,7 +52,7 @@ All resources are region based. If you want to deploy to another region. The com
 
 * aws cloudformation deploy --profile fiverr --region us-east-1 --template s3.template.yaml --stack-name stg-dvix-s3-bucket-stack --parameter-overrides env=stg
 
-* aws cloudformation deploy --profile fiverr --region us-east-1 --template s3.template.yaml --stack-name dprodev-dvix-s3-bucket-stack --parameter-overrides env=prod
+* aws cloudformation deploy --profile fiverr --region us-east-1 --template s3.template.yaml --stack-name prodev-dvix-s3-bucket-stack --parameter-overrides env=prod
 
 
 5. Deploy sg template
