@@ -1,0 +1,271 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Creates backend resources for dvix like EC2s, ECS, Database and SES"
+
+
+Parameters:
+  Environment:
+    Description: Environment for the frontend like dev, stg or prod
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+  VpcId:
+    Description: The Parameter Store of the VPC ID
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dvix/prod/vpc/id
+  PrivateSubnet1Id:
+    Description: The Parameter Store of the Private Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dvix/prod/vpc/subnet/private/1/id
+  PrivateSubnet2Id:
+    Description: The Parameter Store of the Private Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dvix/prod/vpc/subnet/private/2/id
+  PublicSubnet1Id:
+    Description: The Parameter Store of the Public Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dvix/prod/vpc/subnet/public/1/id
+  PublicSubnet2Id:
+    Description: The Parameter Store of the Public Subnet in AZ2
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dvix/prod/vpc/subnet/public/2/id
+  TaskDefinitionCPU:
+    Description: The CPU of the Task Definition
+    Type: String
+    Default: 256
+  TaskDefinitionMemory:
+    Description: The Memory of the Task Definition
+    Type: String
+    Default: 512
+  ContainerCPU:
+    Description: The CPU of the Task Definition Container
+    Type: String
+    Default: 256
+  ContainerMemory:
+    Description: The Memory of the Task Definition Container
+    Type: String
+    Default: 512
+  DockerImageUrl:
+    Description: The Docker Image for the Container
+    Type: String
+    Default: nginx
+  DesiredCount:
+    Description: The desired count for Service
+    Type: Number
+    Default: 1
+
+Conditions:
+  isProd: !Equals [!Ref Environment, 'prod']
+  isStg: !Equals [!Ref Environment, 'stg']
+  isHA: !Or 
+    - !Condition isProd
+    - !Condition isStg
+
+Resources:
+
+  # ALB ###############################################################
+
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-dvix-ecs-alb-sg'
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${Environment}-dvix-ecs-target-group"
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VpcId
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckPort: traffic-port
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+
+  ECSLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${Environment}-dvix-ecs-alb"
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1Id
+        - !Ref PublicSubnet2Id
+      Type: application
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ECSLoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # ECS ################################################################
+
+  ECSContainerSecruityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Dvix ECS Container Security Group
+      GroupName: !Sub "${Environment}-dvix-ecs-container-sg"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-dvix-ecs-container-sg'
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${Environment}-dvix-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: my-task-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+              Resource: arn:aws:logs:*:*:log-group:/ecs/my-task:*
+
+  TaskExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub ${Environment}-dvix-ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        - PolicyName: my-execution-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - ecs:CreateCluster
+              - ecs:DeregisterTaskDefinition
+              - ecs:DescribeClusters
+              - ecs:DescribeTaskDefinition
+              - ecs:ListClusters
+              - ecs:ListTaskDefinitions
+              - ecs:RegisterTaskDefinition
+              Resource: "*"
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${Environment}-dvix-service-cluster
+
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${Environment}-dvix-ecs-task
+      Cpu: !Ref TaskDefinitionCPU
+      Memory: !Ref TaskDefinitionMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !Ref TaskExecutionRole
+      TaskRoleArn: !Ref TaskRole
+      ContainerDefinitions:
+        - Name: !Sub ${Environment}-dvix-ecs-task-container
+          Cpu: !Ref ContainerCPU
+          Memory: !Ref ContainerMemory
+          Image: !Ref DockerImageUrl
+          PortMappings:
+            - ContainerPort: 80
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: Listener
+    Properties:
+      ServiceName: !Sub ${Environment}-dvix-service
+      Cluster: !Ref ECSCluster
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 25
+      DesiredCount: !Ref DesiredCount
+      LoadBalancers:
+        - ContainerName: !Sub ${Environment}-dvix-ecs-task-container
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref ECSContainerSecruityGroup
+          Subnets:
+            - !Ref PrivateSubnet1Id
+            # - !Ref PrivateSubnet2Id
+      TaskDefinition: !Ref ECSTaskDefinition
+
+  # Higher Environment
+
+  ECSSecondaryService:
+    Type: AWS::ECS::Service
+    DependsOn: Listener
+    Condition: isHA
+    Properties:
+      ServiceName: !Sub ${Environment}-dvix-secondary-service
+      Cluster: !Ref ECSCluster
+      LaunchType: FARGATE
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 25
+      DesiredCount: !Ref DesiredCount # This can be changed depending on the situation
+      LoadBalancers:
+        - ContainerName: !Sub ${Environment}-dvix-ecs-task-container
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !Ref ECSContainerSecruityGroup
+          Subnets:
+            # - !Ref PrivateSubnet1Id
+            - !Ref PrivateSubnet2Id
+      TaskDefinition: !Ref ECSTaskDefinition

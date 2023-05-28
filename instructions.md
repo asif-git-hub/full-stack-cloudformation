@@ -62,3 +62,12 @@ All resources are region based. If you want to deploy to another region. The com
 * aws cloudformation deploy --profile fiverr --region us-east-1 --template sg.template.yaml --stack-name stg-dvix-security-group-stack --parameter-overrides env=stg
 
 * aws cloudformation deploy --profile fiverr --region us-east-1 --template sg.template.yaml --stack-name prod-dvix-security-group-stack --parameter-overrides env=prod
+
+6. Deploy goanywhere template
+
+aws cloudformation deploy --profile fiverr --region us-east-1 --template goanywhere.yaml --stack-name dev-dvix-security-group-stack --parameter-overrides env=dev
+
+7. Deploy ECS Template
+aws cloudformation deploy --profile fiverr --region us-east-1 --template ecs.template.yaml --stack-name dev-dvix-ecs-stack --parameter-overrides Environment=dev --capabilities CAPABILITY_NAMED_IAM
+
+aws cloudformation deploy --profile fiverr --region us-east-1 --template ecs.template.yaml --stack-name prod-dvix-ecs-stack --parameter-overrides Environment=prod --capabilities CAPABILITY_NAMED_IAM

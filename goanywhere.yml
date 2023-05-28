@@ -1,0 +1,184 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Creates backend resources for dvix like EC2s, ECS, Database and SES"
+
+Parameters:
+  Environment:
+    Description: Environment for the frontend like dev, stg or prod
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+  VpcId:
+    Description: The Parameter Store of the VPC ID
+    Type: AWS::SSM::Parameter::Value<String>
+  PrivateSubnet1Id:
+    Description: The Parameter Store of the Private Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+  PublicSubnet1Id:
+    Description: The Parameter Store of the Public Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+  PrivateSubnet2Id:
+    Description: The Parameter Store of the Private Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+  PublicSubnet2Id:
+    Description: The Parameter Store of the Public Subnet in AZ2
+    Type: AWS::SSM::Parameter::Value<String>
+  GoAnyWhereInstanceType:
+    Description: The GoAnyWhere Instance Type
+    Type: String
+  GoAnyWhereProxyInstanceType:
+    Description: The GoAnyWhere Proxy Instance Type
+    Type: String
+  GoAnyWhereAppImageId:
+    Description: The Image ID of the GoAnyWhere App
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+  GoAnyWhereProxyImageId:
+    Description: The Image ID of the GoAnyWhere proxy
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+
+Conditions:
+  isProd: !Equals [!Ref Environment, 'prod']
+  isStg: !Equals [!Ref Environment, 'stg']
+  isHA: !Or 
+    - !Condition isProd
+    - !Condition isStg
+
+Resources:
+
+  # Security Group #############################################
+
+  GoAnywhereServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: dvix Application Security Group
+      GroupName: !Sub 'dvix-${Environment}-go-anywhere-private-sg'
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub 'dvix-${Environment}-go-anywhere-private-sg'
+  
+  GoAnywhereProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Go Anywhere Security Group
+      GroupName: !Sub "dvix-${Environment}-go-anywhere-proxy-sg"
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub "dvix-${Environment}-go-anywhere-proxy-sg"
+
+  # EC2 Instances #############################################
+
+  GoAnyWhereEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - GoAnywhereServerSecurityGroup
+    Properties:
+      InstanceType: !Ref GoAnyWhereInstanceType
+      SecurityGroupIds:
+        - !Ref 'GoAnywhereServerSecurityGroup'
+      SubnetId: !Ref PrivateSubnet1Id 
+      ImageId: !Ref GoAnyWhereAppImageId
+      Tags:
+        - Key: Name
+          Value: !Sub 'dvix-${Environment}-go-anywhere-private-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+  GoAnyWhereProxyEc2Instance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - GoAnywhereProxySecurityGroup
+    Properties:
+      InstanceType: !Ref GoAnyWhereProxyInstanceType
+      SecurityGroupIds:
+        - !Ref 'GoAnywhereProxySecurityGroup'
+      SubnetId: !Ref PublicSubnet1Id
+      ImageId: !Ref GoAnyWhereProxyImageId
+      Tags:
+        - Key: Name
+          Value: !Sub 'dvix-${Environment}-go-anywhere-proxy-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+
+  # Higher environment: stg and Prod EC2 Instances ###################
+
+  GoAnyWhereSecondaryEc2Instance:
+    Condition: isHA
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - GoAnywhereServerSecurityGroup
+    Properties:
+      InstanceType: !Ref GoAnyWhereInstanceType
+      SecurityGroupIds:
+        - !Ref 'GoAnywhereServerSecurityGroup'
+      SubnetId: !Ref PrivateSubnet2Id 
+      ImageId: !Ref GoAnyWhereAppImageId
+      Tags:
+        - Key: Name
+          Value: !Sub 'dvix-${Environment}-go-anywhere-private-secondary-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+  GoAnyWhereProxySecondaryEc2Instance:
+    Condition: isHA
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - GoAnywhereProxySecurityGroup
+    Properties:
+      InstanceType: !Ref GoAnyWhereProxyInstanceType
+      SecurityGroupIds:
+        - !Ref 'GoAnywhereProxySecurityGroup'
+      SubnetId: !Ref PrivateSubnet2Id 
+      ImageId: !Ref GoAnyWhereProxyImageId
+      Tags:
+        - Key: Name
+          Value: !Sub 'dvix-${Environment}-go-anywhere-proxy-secondary-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Higher environment: ALB ###################
+
+  TargetGroup:
+    Condition: isHA
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'dvix-${Environment}-GoAnywhere-TargetGroup'
+      Port: 80
+      Protocol: HTTP
+      Targets:
+        - Id: !Ref GoAnyWhereProxyEc2Instance
+          Port: 80
+        - Id: !Ref GoAnyWhereProxySecondaryEc2Instance
+          Port: 80
+      TargetType: instance
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  LoadBalancer:
+    Condition: isHA
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'dvix-${Environment}-LoadBalancer'
+      Scheme: internet-facing
+      Type: network
+      Subnets: 
+        - !Ref PublicSubnet1Id
+        - !Ref PublicSubnet2Id
+
+  Listener:
+    Condition: isHA
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
