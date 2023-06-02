@@ -12,6 +12,10 @@ Parameters:
       - prod
       - dev
       - stg
+  Application:
+    Type: String
+    Description: Name of application to prepended to names
+    Default: dvix
   VpcId:
     Description: The Parameter Store of the VPC ID
     Type: AWS::SSM::Parameter::Value<String>
@@ -32,6 +36,14 @@ Parameters:
     Description: The Parameter Store of the Public Subnet in AZ2
     Type: AWS::SSM::Parameter::Value<String>
     Default: /dvix/prod/vpc/subnet/public/2/id
+  ECSContainerSecruityGroup:
+    Description: The Parameter Store of the ECS Container
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/dvix/dev/vpc/sg/ecs/container/id"
+  LoadBalancerSecurityGroup:
+    Description: The Parameter Store of the ECS ALB
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: "/dvix/dev/vpc/sg/alb/ecs/id"
   TaskDefinitionCPU:
     Description: The CPU of the Task Definition
     Type: String
@@ -68,24 +80,10 @@ Resources:
 
   # ALB ###############################################################
 
-  LoadBalancerSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security group for the ALB
-      VpcId: !Ref VpcId
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-      Tags:
-        - Key: Name
-          Value: !Sub '${Environment}-dvix-ecs-alb-sg'
-
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub "${Environment}-dvix-ecs-target-group"
+      Name: !Sub "${Application}-${Environment}-ecs-target-group"
       Port: 80
       Protocol: HTTP
       TargetType: ip
@@ -102,7 +100,7 @@ Resources:
   ECSLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub "${Environment}-dvix-ecs-alb"
+      Name: !Sub "${Application}-${Environment}-ecs-alb"
       Scheme: internet-facing
       Subnets:
         - !Ref PublicSubnet1Id
@@ -123,29 +121,10 @@ Resources:
 
   # ECS ################################################################
 
-  ECSContainerSecruityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties: 
-      GroupDescription: Dvix ECS Container Security Group
-      GroupName: !Sub "${Environment}-dvix-ecs-container-sg"
-      VpcId: !Ref VpcId
-      SecurityGroupIngress: 
-        - IpProtocol: tcp
-          FromPort: 1521
-          ToPort: 1521
-          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
-      Tags:
-        - Key: Name
-          Value: !Sub '${Environment}-dvix-ecs-container-sg'
-
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${Environment}-dvix-ecs-task-role
+      RoleName: !Sub "${Application}-${Environment}-ecs-task-role"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -168,7 +147,7 @@ Resources:
   TaskExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub ${Environment}-dvix-ecs-task-execution-role
+      RoleName: !Sub "${Application}-${Environment}-ecs-task-execution-role"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -198,12 +177,12 @@ Resources:
   ECSCluster:
     Type: AWS::ECS::Cluster
     Properties:
-      ClusterName: !Sub ${Environment}-dvix-service-cluster
+      ClusterName: !Sub "${Application}-${Environment}-service-cluster"
 
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Sub ${Environment}-dvix-ecs-task
+      Family: !Sub "${Application}-${Environment}-ecs-task"
       Cpu: !Ref TaskDefinitionCPU
       Memory: !Ref TaskDefinitionMemory
       NetworkMode: awsvpc
@@ -212,7 +191,7 @@ Resources:
       ExecutionRoleArn: !Ref TaskExecutionRole
       TaskRoleArn: !Ref TaskRole
       ContainerDefinitions:
-        - Name: !Sub ${Environment}-dvix-ecs-task-container
+        - Name: !Sub "${Application}-${Environment}-ecs-task-container"
           Cpu: !Ref ContainerCPU
           Memory: !Ref ContainerMemory
           Image: !Ref DockerImageUrl
@@ -223,7 +202,7 @@ Resources:
     Type: AWS::ECS::Service
     DependsOn: Listener
     Properties:
-      ServiceName: !Sub ${Environment}-dvix-service
+      ServiceName: !Sub "${Application}-${Environment}-service"
       Cluster: !Ref ECSCluster
       LaunchType: FARGATE
       DeploymentConfiguration:
@@ -231,7 +210,7 @@ Resources:
         MinimumHealthyPercent: 25
       DesiredCount: !Ref DesiredCount
       LoadBalancers:
-        - ContainerName: !Sub ${Environment}-dvix-ecs-task-container
+        - ContainerName: !Sub "${Application}-${Environment}-ecs-task-container"
           ContainerPort: 80
           TargetGroupArn: !Ref TargetGroup
       NetworkConfiguration:
@@ -250,7 +229,7 @@ Resources:
     DependsOn: Listener
     Condition: isHA
     Properties:
-      ServiceName: !Sub ${Environment}-dvix-secondary-service
+      ServiceName: !Sub "${Application}-${Environment}-secondary-service"
       Cluster: !Ref ECSCluster
       LaunchType: FARGATE
       DeploymentConfiguration:
@@ -258,7 +237,7 @@ Resources:
         MinimumHealthyPercent: 25
       DesiredCount: !Ref DesiredCount # This can be changed depending on the situation
       LoadBalancers:
-        - ContainerName: !Sub ${Environment}-dvix-ecs-task-container
+        - ContainerName: !Sub "${Application}-${Environment}-ecs-task-container"
           ContainerPort: 80
           TargetGroupArn: !Ref TargetGroup
       NetworkConfiguration:

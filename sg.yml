@@ -1,0 +1,211 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Environment:
+    Description: An environment name that is prefixed to resource names
+    AllowedValues:
+      - dev
+      - stg
+      - prod
+    Type: String
+    Default: dev
+
+  Application:
+    Type: String
+    Description: Name of application to prepended to names
+    Default: dvix
+
+  VpcId:
+    Description: The Parameter Store of the VPC ID
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /dvix/prod/vpc/id
+
+Conditions:
+  isProd: !Equals [!Ref Environment, 'prod']
+  isStg: !Equals [!Ref Environment, 'stg']
+  isHA: !Or
+    - !Condition isProd
+    - !Condition isStg
+
+Resources:
+  # EFS Security Groups
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: EFS Security Group
+      GroupName: !Sub ${Application}-${Environment}-efs-sg
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ECSContainerSecruityGroup 
+      Tags:
+        - Key: Name
+          Value: !Sub ${Application}-${Environment}-efs-sg
+
+            #InboundRuleNFSGoAnywherePrivate:
+            #Type: 'AWS::EC2::SecurityGroupIngress'
+            #Properties:
+            #GroupId: !GetAtt EFSSecurityGroup.GroupId
+            #IpProtocol: tcp
+            #ToPort: 2049
+            #SourceSecurityGroupName: !Sub '${Application}-${Environment}-go-anywhere-private-sg'
+  EFSSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${Application}/${Environment}/vpc/sg/efs/id
+      Type: String
+      Value: !GetAtt EFSSecurityGroup.GroupId
+      Description: ID for EFS Security group
+           
+  # IBM Security Groups
+  IBMApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: IBM Application Security Group
+      GroupName: !Sub "${Application}-${Environment}-application-sg"
+      VpcId: !Ref VpcId 
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-application-sg'
+
+  IBMApplicationSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${Application}/${Environment}/vpc/sg/ibm/application/id
+      Type: String
+      Value: !GetAtt IBMApplicationSecurityGroup.GroupId
+      Description: ID for IBM Application Security Group
+
+  # GoAnywhere Security Groups
+  GoAnywhereServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Goanywhere Server Security Group
+      GroupName: !Sub '${Application}-${Environment}-go-anywhere-private-sg'
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-go-anywhere-private-sg'
+  
+  GoAnywhereServerSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${Application}/${Environment}/vpc/sg/goanywhere/server/id
+      Type: String
+      Value: !GetAtt GoAnywhereServerSecurityGroup.GroupId
+      Description: ID for GoAnywhere Server Security Group
+
+  GoAnywhereProxySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Go Anywhere Proxy Security Group
+      GroupName: !Sub "${Application}-${Environment}-go-anywhere-proxy-sg"
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-go-anywhere-proxy-sg"
+
+  GoAnywhereProxySecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${Application}/${Environment}/vpc/sg/goanywhere/proxy/id
+      Type: String
+      Value: !GetAtt GoAnywhereProxySecurityGroup.GroupId
+      Description: ID for GoAnywhere Proxy Security Group
+
+  # Oracle Security Group
+  # DBSecurityGroup:
+  #   Type: AWS::RDS::DBSecurityGroup
+  #   Properties:
+  #     GroupDescription: "Security group for RDS instance"
+  #     EC2VpcId: !Ref VpcId
+  #     Tags:
+  #       - Key: Name
+  #         Value: !Sub "${Application}-${Environment}-rds-sg"
+  
+  # DBSecurityGroupParameter:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Name: !Sub /${Application}/${Environment}/vpc/sg/rds/oracle/id
+  #     Type: String
+  #     Value: !Ref DBSecurityGroup
+  #     Description: ID for OracleRDs Security Group
+
+  OracleSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security group for RDS instance"
+      GroupName: !Sub "${Application}-${Environment}-rds-sg"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref ECSContainerSecruityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${Application}-${Environment}-rds-sg"
+  
+  OracleSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${Application}/${Environment}/vpc/sg/rds/oracledb/id
+      Type: String
+      Value: !Ref OracleSecurityGroup
+      Description: ID for OracleRDs Security Group
+
+  # ALB Security Groups ##############################
+
+  ECSLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-ecs-alb-sg'
+
+  ECSLoadBalancerSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${Application}/${Environment}/vpc/sg/alb/ecs/id
+      Type: String
+      Value: !Ref ECSLoadBalancerSecurityGroup
+      Description: ID for ECS ALB Security Group
+
+  # ECS Security Groups ###################################
+
+  ECSContainerSecruityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: ECSLoadBalancerSecurityGroup
+    Properties: 
+      GroupDescription: Dvix ECS Container Security Group
+      GroupName: !Sub "${Application}-${Environment}-ecs-container-sg"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref ECSLoadBalancerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ECSLoadBalancerSecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-ecs-container-sg'
+
+  ECSContainerSecruityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${Application}/${Environment}/vpc/sg/ecs/container/id
+      Type: String
+      Value: !Ref ECSContainerSecruityGroup
+      Description: ID for ECS Container Security Group

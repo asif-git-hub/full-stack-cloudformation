@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Creates Email Service resources"
+
+Parameters:
+  Environment:
+    Description: Environment for the frontend like dev, stg or prod
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+  Application:
+    Type: String
+    Description: Name of application to prepended to names
+    Default: dvix
+  Identity:
+    Type: String
+
+Resources:
+
+  # IAM for SES ##########################################
+
+  SESRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: SESRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: ""
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: "sts:AssumeRole"
+
+  SESConfigSet:
+    Type: 'AWS::SES::ConfigurationSet'
+    Properties:
+      Name: !Sub "${Application}-${Environment}-ses-config"
+      ReputationMetricsEnabled: true
+      SendingEnabled: true
+      SuppressionOptions:
+        SuppressedReasons:
+          - COMPLAINT
+          - BOUNCE
+
+  EmailSES:
+  Type: AWS::SES::EmailIdentity
+  Properties:
+    EmailIdentity: 'yourdomain.com'

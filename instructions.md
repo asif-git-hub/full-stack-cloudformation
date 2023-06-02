@@ -71,3 +71,7 @@ aws cloudformation deploy --profile fiverr --region us-east-1 --template goanywh
 aws cloudformation deploy --profile fiverr --region us-east-1 --template ecs.template.yaml --stack-name dev-dvix-ecs-stack --parameter-overrides Environment=dev --capabilities CAPABILITY_NAMED_IAM
 
 aws cloudformation deploy --profile fiverr --region us-east-1 --template ecs.template.yaml --stack-name prod-dvix-ecs-stack --parameter-overrides Environment=prod --capabilities CAPABILITY_NAMED_IAM
+
+8. Deploy SG Template
+
+aws cloudformation deploy --profile fiverr --region us-east-1 --template sg.yaml --stack-name dev-dvix-security-group-stack --parameter-overrides Environment=dev --capabilities CAPABILITY_NAMED_IAM
