@@ -18,7 +18,7 @@ Parameters:
   Identity:
     Type: String
     Description: Identity for the domain or email
-    Default: asifalam0308@gmail.com
+    Default: xhell44@gmail.com
 
 Resources:
 
@@ -27,7 +27,17 @@ Resources:
   SESRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: SESRole
+      RoleName: !Sub "${Application}-${Environment}-ses-role"
+      Policies:
+        - PolicyName: !Sub "${Application}-${Environment}-ses-role-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "ses:SendEmail"
+                  - "ses:SendRawEmail"
+                Resource: "*"
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -36,6 +46,31 @@ Resources:
             Principal:
               Service: ses.amazonaws.com
             Action: "sts:AssumeRole"
+
+  SESUser:
+    Type: "AWS::IAM::User"
+    Properties:
+      UserName: !Sub "${Application}-${Environment}-ses-user"
+
+  SESUserAccessKey:
+    Type: "AWS::IAM::AccessKey"
+    Properties:
+      UserName: !Ref SESUser
+
+  SESUserPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: !Sub "${Application}-${Environment}-ses-user-policy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ses:SendEmail"
+              - "ses:SendRawEmail"
+            Resource: "*"
+      Users:
+        - !Ref SESUser
 
   SESConfigSet:
     Type: 'AWS::SES::ConfigurationSet'
@@ -54,25 +89,48 @@ Resources:
     Type: AWS::SES::EmailIdentity
     Properties:
       EmailIdentity: !Ref Identity   # This can be EMAIL or DOMAIN
-      DkimAttributes:
-        SigningEnabled: true
+      # DkimAttributes:
+      #   SigningEnabled: true      # Enable this once domain is verified for DKIM signing
       ConfigurationSetAttributes: 
         ConfigurationSetName: !Ref SESConfigSet
 
-  EmailIdentityPolicy:
-    Type: AWS::SES::IdentityPolicy
+  # Optional (For testing): Check with client if they want a template
+
+  SESTemplate:
+    Type: AWS::SES::Template
     Properties:
-      Identity: !Ref EmailIdentitySES
-      PolicyName: !Sub "${Application}-${Environment}-ses-identity-policy"
-      Roles:
-        - !Ref SESRole
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action: 
-              - "ses:SendEmail"
-              - "ses:SendRawEmail"
-            Resource: "*"
-            Principal:
-              AWS: "*"
+      Template: 
+        TemplateName: MyTemplate
+        HtmlPart: "<h1>Hello {{name}},</h1><p>This is a sample email template.</p>"
+        SubjectPart: "Sample Email Template"
+
+  # Uncomment if the domain name is supplied
+
+  # WebsiteDNS:
+  #   Type: AWS::Route53::RecordSetGroup
+  #   Properties:
+  #     HostedZoneId: YOURHOSTEDZONEID
+  #     RecordSets:
+  #       - Name:
+  #           Fn::GetAtt: [ EmailIdentitySES, DkimDNSTokenName1 ]
+  #         Type: CNAME
+  #         TTL: 600
+  #         ResourceRecords:
+  #           - Fn::GetAtt: [ EmailIdentitySES, DkimDNSTokenValue1 ]
+  #       - Name:
+  #           Fn::GetAtt: [ EmailIdentitySES, DkimDNSTokenName2 ]
+  #         Type: CNAME
+  #         TTL: 600
+  #         ResourceRecords:
+  #           - Fn::GetAtt: [ EmailIdentitySES, DkimDNSTokenValue2 ]
+  #       - Name:
+  #           Fn::GetAtt: [ EmailIdentitySES, DkimDNSTokenName3 ]
+  #         Type: CNAME
+  #         TTL: 600
+  #         ResourceRecords:
+  #           - Fn::GetAtt: [ EmailIdentitySES, DkimDNSTokenValue3 ]
+  #       - Name: !Ref Identity
+  #         Type: MX
+  #         TTL: 600
+  #         ResourceRecords:
+  #           - '10 inbound-smtp.{REGION}.amazonaws.com'  # this will depend on your region
