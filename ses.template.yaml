@@ -17,6 +17,8 @@ Parameters:
     Default: dvix
   Identity:
     Type: String
+    Description: Identity for the domain or email
+    Default: asifalam0308@gmail.com
 
 Resources:
 
@@ -39,14 +41,38 @@ Resources:
     Type: 'AWS::SES::ConfigurationSet'
     Properties:
       Name: !Sub "${Application}-${Environment}-ses-config"
-      ReputationMetricsEnabled: true
-      SendingEnabled: true
+      ReputationOptions:
+        ReputationMetricsEnabled: true
+      SendingOptions:
+        SendingEnabled: true
       SuppressionOptions:
         SuppressedReasons:
           - COMPLAINT
           - BOUNCE
 
-  EmailSES:
-  Type: AWS::SES::EmailIdentity
-  Properties:
-    EmailIdentity: 'yourdomain.com'
+  EmailIdentitySES:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref Identity   # This can be EMAIL or DOMAIN
+      DkimAttributes:
+        SigningEnabled: true
+      ConfigurationSetAttributes: 
+        ConfigurationSetName: !Ref SESConfigSet
+
+  EmailIdentityPolicy:
+    Type: AWS::SES::IdentityPolicy
+    Properties:
+      Identity: !Ref EmailIdentitySES
+      PolicyName: !Sub "${Application}-${Environment}-ses-identity-policy"
+      Roles:
+        - !Ref SESRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: 
+              - "ses:SendEmail"
+              - "ses:SendRawEmail"
+            Resource: "*"
+            Principal:
+              AWS: "*"
