@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Creates S3 bucket with Cloudtrail access logging"
+
+Parameters:
+  env:
+    Description: Environment for the frontend like dev, staging or prod
+    Type: String
+    Default: "dev"
+  
+Resources:
+
+  MainBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${env}-${AWS::Region}-${AWS::AccountId}-test-bucket"
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: access-logs
+
+  MainBucketAccessPoint:
+    Type: AWS::S3::AccessPoint
+    Properties: 
+      Bucket: !Ref MainBucket
+      BucketAccountId: !Ref AWS::AccountId
+      Name: !Sub "${env}-${AWS::Region}-${AWS::AccountId}-bucket-accesspoint"
+  
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${env}-${AWS::Region}-${AWS::AccountId}-logging-bucket"
+
+  TrailBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    DependsOn:
+      - LoggingBucket
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: "cloudtrail.amazonaws.com"
+          Action: "s3:GetBucketAcl"
+          Resource: !Sub "arn:aws:s3:::${LoggingBucket}"
+        - Effect: Allow
+          Principal:
+            Service: "cloudtrail.amazonaws.com"
+          Action: "s3:PutObject"
+          Resource: !Sub "arn:aws:s3:::${LoggingBucket}/AWSLogs/${AWS::AccountId}/*"
+          Condition:
+            StringEquals:
+              "s3:x-amz-acl": "bucket-owner-full-control"
+
+  CloudTrailForMainBucket:
+    Type: "AWS::CloudTrail::Trail"
+    DependsOn:
+      - TrailBucketPolicy
+      - LoggingBucket
+      - MainBucket
+    Properties:
+      IsLogging: true
+      S3BucketName: !Ref LoggingBucket    # the name of the Amazon S3 bucket designated for publishing log files
+      # S3KeyPrefix: "todo"
+      EventSelectors:
+        - DataResources:
+            - Type: "AWS::S3::Object"
+              Values:
+                - !Sub "${MainBucket.Arn}/"  # log data events for the S3 bucket defined above
+          IncludeManagementEvents: false
+          ReadWriteType: ReadOnly   # Read only events
