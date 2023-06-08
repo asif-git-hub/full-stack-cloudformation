@@ -60,14 +60,40 @@ Resources:
       - TrailBucketPolicy
       - LoggingBucket
       - MainBucket
+      - MainBucketAccessPoint
     Properties:
       IsLogging: true
       S3BucketName: !Ref LoggingBucket    # the name of the Amazon S3 bucket designated for publishing log files
       # S3KeyPrefix: "todo"
-      EventSelectors:
-        - DataResources:
-            - Type: "AWS::S3::Object"
-              Values:
-                - !Sub "${MainBucket.Arn}/"  # log data events for the S3 bucket defined above
-          IncludeManagementEvents: false
-          ReadWriteType: ReadOnly   # Read only events
+      AdvancedEventSelectors:
+        - FieldSelectors:
+          - Field: resources.type
+            Equals: 
+              - AWS::S3::AccessPoint
+          - Field: resources.ARN
+            StartsWith:
+              - !GetAtt MainBucketAccessPoint.Arn
+          - Field: eventCategory
+            Equals: 
+              - Data
+          - Field: readOnly
+            Equals:
+              - true
+        - FieldSelectors:
+          - Field: resources.type
+            Equals: 
+              - AWS::S3::Object
+          - Field: resources.ARN
+            NotStartsWith:
+              - !Join ["", [!GetAtt LoggingBucket.Arn, "/"]]
+          - Field: eventCategory
+            Equals: 
+              - Data
+
+      # EventSelectors:
+      #   - DataResources:
+      #       - Type: "AWS::S3::Object"
+      #         Values:
+      #           - !Sub "${MainBucket.Arn}/"  # log data events for the S3 bucket defined above
+          # IncludeManagementEvents: false
+          # ReadWriteType: ReadOnly   # Read only events
