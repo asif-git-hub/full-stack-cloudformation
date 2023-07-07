@@ -1,0 +1,191 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: "Creates backend resources for dvix like EC2s, ECS, Database and SES"
+
+Parameters:
+  Environment:
+    Description: Environment for the frontend like dev, stg or prod
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+  Application:
+    Type: String
+    Description: Name of application to prepended to names
+    Default: dvix
+  VpcId:
+    Description: The Parameter Store of the VPC ID
+    Type: AWS::SSM::Parameter::Value<String>
+  PrivateSubnet1Id:
+    Description: The Parameter Store of the Private Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+  PublicSubnet1Id:
+    Description: The Parameter Store of the Public Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+  PrivateSubnet2Id:
+    Description: The Parameter Store of the Private Subnet in AZ1
+    Type: AWS::SSM::Parameter::Value<String>
+  PublicSubnet2Id:
+    Description: The Parameter Store of the Public Subnet in AZ2
+    Type: AWS::SSM::Parameter::Value<String>
+  GoAnyWhereServerInstanceType:
+    Description: The GoAnyWhere Instance Type
+    Type: String
+  GoAnyWhereProxyInstanceType:
+    Description: The GoAnyWhere Proxy Instance Type
+    Type: String
+  GoAnyWhereServerImageId:
+    Description: The Image ID of the GoAnyWhere App
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+  GoAnyWhereProxyImageId:
+    Description: The Image ID of the GoAnyWhere proxy
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+
+Conditions:
+  isProd: !Equals [!Ref Environment, 'prod']
+  isStg: !Equals [!Ref Environment, 'stg']
+  isHA: !Or 
+    - !Condition isProd
+    - !Condition isStg
+
+Resources:
+
+  # EC2 Instances #############################################
+
+  GoAnyWhereEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref GoAnyWhereServerInstanceType
+      SecurityGroupIds:
+        - !Sub '{{resolve:ssm:/${Application}/${Environment}/vpc/sg/goanywhere/server/id}}' 
+      SubnetId: !Ref PrivateSubnet1Id 
+      ImageId: !Ref GoAnyWhereServerImageId
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-go-anywhere-private-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+  GoAnyWhereProxyEc2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref GoAnyWhereProxyInstanceType
+      SecurityGroupIds:
+        - !Sub '{{resolve:ssm:/${Application}/${Environment}/vpc/sg/goanywhere/proxy/id}}' 
+      SubnetId: !Ref PublicSubnet1Id
+      ImageId: !Ref GoAnyWhereProxyImageId
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-go-anywhere-proxy-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+
+  # Higher environment: stg and Prod EC2 Instances ###################
+
+  GoAnyWhereSecondaryEc2Instance:
+    Condition: isHA
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref GoAnyWhereServerInstanceType
+      SecurityGroupIds:
+        - !Sub '{{resolve:ssm:/${Application}/${Environment}/vpc/sg/goanywhere/server/id}}' 
+      SubnetId: !Ref PrivateSubnet2Id 
+      ImageId: !Ref GoAnyWhereServerImageId
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-go-anywhere-private-secondary-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+  GoAnyWhereProxySecondaryEc2Instance:
+    Condition: isHA
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref GoAnyWhereProxyInstanceType
+      SecurityGroupIds:
+        - !Sub '{{resolve:ssm:/${Application}/${Environment}/vpc/sg/goanywhere/proxy/id}}' 
+      SubnetId: !Ref PrivateSubnet2Id 
+      ImageId: !Ref GoAnyWhereProxyImageId
+      IamInstanceProfile: !Ref InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Sub '${Application}-${Environment}-go-anywhere-proxy-secondary-ec2instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Higher environment: NLB ###################
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${Application}-${Environment}-GoAnywhere-TargetGroup'
+      Port: 22 # Need to veryfy if SC is using port 22 for the SFTP listening connection
+      Protocol: TCP
+      Targets:
+        - Id: !Ref GoAnyWhereProxyEc2Instance
+          Port: 22
+        - !If 
+          - isHA
+          - Id: !Ref GoAnyWhereProxySecondaryEc2Instance
+            Port: 22
+          - !Ref AWS::NoValue
+      TargetType: instance
+      VpcId: !Ref VpcId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${Application}-${Environment}-LoadBalancer'
+      Scheme: internet-facing
+      Type: network
+      Subnets: 
+        - !Ref PublicSubnet1Id
+        - !If 
+          - isHA
+          - !Ref PublicSubnet2Id
+          - !Ref AWS::NoValue
+      LoadBalancerAttributes: 
+        - Key: load_balancing.cross_zone.enabled
+          Value: 'true'
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: TCP
+      Port: 22
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # IAM Role for EC2 #############################################
+
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Application}-${Environment}-goanywhere-ec2-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${Application}-${Environment}-goanywhere-ec2-instance-profile'
+      Roles:
+        - !Ref EC2Role

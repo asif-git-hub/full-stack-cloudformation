@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Creates S3 bucket with Cloudtrail access logging"
+
+Parameters:
+  Application:
+    Type: String
+    Description: Name of application to prepended to names
+    Default: dvix
+  Environment:
+    Description: Environment for the frontend like dev, stg or prod
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - prod
+      - dev
+      - stg
+  # LoggingBucket:
+  #   Description: S3 Logging Bucket
+  #   Type: String
+  
+Resources:
+
+  # Comment this out if you already have logging bucket
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: Private
+      BucketName: !Sub "${Application}-${Environment}-${AWS::AccountId}-service-logs"
+
+  TrailBucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    DependsOn:
+      - LoggingBucket
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: "cloudtrail.amazonaws.com"
+          Action: "s3:GetBucketAcl"
+          Resource: !Sub "arn:aws:s3:::${LoggingBucket}"
+        - Effect: Allow
+          Principal:
+            Service: "cloudtrail.amazonaws.com"
+          Action: "s3:PutObject"
+          Resource: !Sub "arn:aws:s3:::${LoggingBucket}/AWSLogs/${AWS::AccountId}/*"
+          Condition:
+            StringEquals:
+              "s3:x-amz-acl": "bucket-owner-full-control"
+
+  Trail:
+    Type: "AWS::CloudTrail::Trail"
+    DependsOn:
+      - TrailBucketPolicy
+      - LoggingBucket
+    Properties:
+      IsLogging: true
+      S3BucketName: !Ref LoggingBucket    # the name of the Amazon S3 bucket designated for publishing log files
+      TrailName: !Sub "${Application}-${Environment}-bucket-trail"
+      IsMultiRegionTrail: true  # For multi region set these fields to true
+      IncludeGlobalServiceEvents: true  # For multi region set these fields to true
+      EventSelectors:
+        - DataResources:
+            - Type: "AWS::S3::Object"
+              Values:
+                - "arn:aws:s3"   # All S3 buckets
+          IncludeManagementEvents: false
+          ReadWriteType: All   # Read only events
+
+      # AdvancedEventSelectors:
+      #   - FieldSelectors:
+      #     - Field: resources.type
+      #       Equals: 
+      #         - AWS::S3::Object
+      #     - Field: resources.ARN
+      #       StartsWith:
+      #         - !Sub "arn:aws:s3:"
+      #     - Field: eventCategory
+      #       Equals: 
+      #         - Data
+      #   - FieldSelectors:
+      #     - Field: resources.type
+      #       Equals: 
+      #         - AWS::S3::Object
+      #     - Field: resources.ARN
+      #       NotStartsWith:
+      #         - !Join ["", [!GetAtt LoggingBucket.Arn, "/"]]
+      #     - Field: eventCategory
+      #       Equals: 
+      #         - Data

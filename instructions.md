@@ -75,3 +75,15 @@ aws cloudformation deploy --profile fiverr --region us-east-1 --template ecs.tem
 8. Deploy SG Template
 
 aws cloudformation deploy --profile fiverr --region us-east-1 --template sg.yaml --stack-name dev-dvix-security-group-stack --parameter-overrides Environment=dev --capabilities CAPABILITY_NAMED_IAM
+
+9. Deploy SES
+
+aws cloudformation deploy --profile fiverr --region us-east-1 --template ses.template.yaml --stack-name dev-dvix-ses-stack --parameter-overrides Environment=dev --capabilities CAPABILITY_NAMED_IAM
+
+10. Deploy s3 with cloudtrail
+
+aws cloudformation deploy --region us-east-1 --template s3.trail.template.yaml --stack-name dev-s3-trail-stack --parameter-overrides trailName=s3-accesspoints-trail --capabilities CAPABILITY_NAMED_IAM
+
+
+11. 
+aws cloudformation deploy --profile fiverr --region us-east-1 --template cloudtrail.template.yaml --stack-name dev-dvix-trail-stack --parameter-overrides Environment=dev

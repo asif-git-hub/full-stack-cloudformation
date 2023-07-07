@@ -6,25 +6,33 @@ Parameters:
     Description: Environment for the frontend like dev, staging or prod
     Type: String
     Default: "dev"
+  trailName:
+    Description: Cloudtrail name
+    Type: String
+    Default: "s3-accesspoint-trail"
+  scheduledHour:
+    Description: Schedule time to run everyday
+    Type: String
+    Default: "1"
   
 Resources:
 
-  MainBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      AccessControl: Private
-      BucketName: !Sub "${env}-${AWS::Region}-${AWS::AccountId}-test-bucket"
-      LoggingConfiguration:
-        DestinationBucketName: !Ref LoggingBucket
-        LogFilePrefix: access-logs
+  # MainBucket:
+  #   Type: AWS::S3::Bucket
+  #   Properties:
+  #     AccessControl: Private
+  #     BucketName: !Sub "${env}-${AWS::Region}-${AWS::AccountId}-test-bucket"
+  #     LoggingConfiguration:
+  #       DestinationBucketName: !Ref LoggingBucket
+  #       LogFilePrefix: access-logs
 
-  MainBucketAccessPoint:
-    Type: AWS::S3::AccessPoint
-    Properties: 
-      Bucket: !Ref MainBucket
-      BucketAccountId: !Ref AWS::AccountId
-      Name: !Sub "${env}-${AWS::Region}-${AWS::AccountId}-bucket-accesspoint"
-  
+  # MainBucketAccessPoint:
+  #   Type: AWS::S3::AccessPoint
+  #   Properties: 
+  #     Bucket: !Ref MainBucket
+  #     BucketAccountId: !Ref AWS::AccountId
+  #     Name: !Sub "${env}-${AWS::Region}-${AWS::AccountId}-bucket-accesspoint"
+
   LoggingBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -59,41 +67,108 @@ Resources:
     DependsOn:
       - TrailBucketPolicy
       - LoggingBucket
-      - MainBucket
-      - MainBucketAccessPoint
     Properties:
       IsLogging: true
       S3BucketName: !Ref LoggingBucket    # the name of the Amazon S3 bucket designated for publishing log files
-      # S3KeyPrefix: "todo"
+      TrailName: !Ref trailName
+      IsMultiRegionTrail: true
+      IncludeGlobalServiceEvents: true
       AdvancedEventSelectors:
         - FieldSelectors:
           - Field: resources.type
             Equals: 
               - AWS::S3::AccessPoint
-          - Field: resources.ARN
-            StartsWith:
-              - !GetAtt MainBucketAccessPoint.Arn
+          # - Field: resources.ARN
+          #   StartsWith:
+          #     - !Sub "arn:aws:s3:${AWS::Region}:${AWS::AccountId}:accesspoint"
           - Field: eventCategory
             Equals: 
               - Data
           - Field: readOnly
             Equals:
               - true
-        - FieldSelectors:
-          - Field: resources.type
-            Equals: 
-              - AWS::S3::Object
-          - Field: resources.ARN
-            NotStartsWith:
-              - !Join ["", [!GetAtt LoggingBucket.Arn, "/"]]
-          - Field: eventCategory
-            Equals: 
-              - Data
+        # - FieldSelectors:
+        #   - Field: resources.type
+        #     Equals: 
+        #       - AWS::S3::Object
+        #   - Field: resources.ARN
+        #     NotStartsWith:
+        #       - !Join ["", [!GetAtt LoggingBucket.Arn, "/"]]
+        #   - Field: eventCategory
+        #     Equals: 
+        #       - Data
 
-      # EventSelectors:
-      #   - DataResources:
-      #       - Type: "AWS::S3::Object"
-      #         Values:
-      #           - !Sub "${MainBucket.Arn}/"  # log data events for the S3 bucket defined above
-          # IncludeManagementEvents: false
-          # ReadWriteType: ReadOnly   # Read only events
+  # Glue #############################################
+
+  GlueJobRole: 
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub "${env}-glue-job-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: "*"
+  
+  GlueJob:
+    Type: AWS::Glue::Job
+    DependsOn: GlueJobRole
+    Properties: 
+      Name: !Sub ${env}-glue-job
+      Description: "Glue Job"
+      MaxRetries: 1
+      Role: !Ref GlueJobRole
+      WorkerType: G.1X
+      ExecutionClass: STANDARD
+      GlueVersion: "3.0"
+      NumberOfWorkers: 10
+      Timeout: 2880
+      DefaultArguments: {
+        "--OVERRIDE_S3_READ_PATH" : "yes",
+        "--S3_READ_PATH" : "s3://adx4s3-usage-metrics-logs/AWSLogs/147854383891/CloudTrail/*/2023/05/*/",
+        "--enable-glue-datacatalog" : "true",
+        "--S3_WRITE_PATH" : "s3://adx4s3-usage-metrics-logs/OUT8",
+        "--job-bookmark-option" : "job-bookmark-enable",
+        "--PROCESS_LOGS_FOR" : "PREVIOUS_DAY",
+        "--TempDir" : "s3://aws-glue-assets-805501006449-us-east-1/temporary/",
+        "--S3_CLOUDTRAIL_BASE_PATH" : "s3://adx4s3-usage-metrics-logs/AWSLogs/147854383891/CloudTrail/",
+        "--enable-metrics" : "true",
+        "--enable-spark-ui" : "true",
+        "--encryption-type" : "sse-s3",
+        "--spark-event-logs-path" : "s3://aws-glue-assets-805501006449-us-east-1/sparkHistoryLogs/",
+        "--enable-job-insights" : "true",
+        "--GLUE_DATABASE" : "adx_curated",
+        "--GLUE_TABLE_NAME" : "adx_metrics_out4_test",
+        "--enable-continuous-cloudwatch-log" : "true",
+        "--job-language" : "python",
+        "--enable-auto-scaling" : "true"
+      }
+      Command:
+        Name: glueetl
+        PythonVersion: 3
+        ScriptLocation: s3://marketplace-sa-resources/workshops/AWSDataExchange/ADX_product_spotlight_series/adx_metrics_processing.py
+  
+  GlueJobScheduledJobTrigger:
+    Type: AWS::Glue::Trigger
+    DependsOn: GlueJob
+    Properties:
+      Type: SCHEDULED
+      Description: Scheduled Glue Job
+      Schedule: !Sub cron(0 ${scheduledHour} * * ? *)
+      Actions:
+        - JobName: !Sub ${env}-glue-job
+      Name: !Sub ${env}-glue-job-schedule
